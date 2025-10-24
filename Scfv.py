@@ -7,12 +7,12 @@ import os
 import sys
 
 class Scfv:
-    def __init__(self, scfv_fasta_path, scheme: str = "martin"):
-        self.scfv_fasta_path = scfv_fasta_path
+    def __init__(self, scheme: str = "martin"):
         self.scheme = scheme
+        self.scfv_dict = None
         self.pc_annotator = PairedChainAnnotator(scheme = scheme)
     
-    def extract_seqs(self, suffix_split: str = "_-_", seq_type: str = ""):
+    def extract_seqs(self, fasta_path,  suffix_split: str = "_-_", seq_type: str = "", anti = False):
         """ Function to extract heavy and light chain sequences from scfv sequences in fasta file
         Args:
             suffix_split (str): Suffix to split fasta record IDs
@@ -20,12 +20,21 @@ class Scfv:
         Returns:
             dict: nested dictionary of scfv sequences with heavy and light chains
         """ 
-        self.scfv_dict = get_seqs_from_fasta(fasta_path = self.scfv_fasta_path, suffix_split= suffix_split, seq_type = seq_type)
-        self.scfv_ids = list(self.scfv_dict.keys())
+        scfv_dict = get_seqs_from_fasta(fasta_path = fasta_path, suffix_split= suffix_split, seq_type = seq_type, anti = anti)
+        scfv_ids = list(scfv_dict.keys())
+        print(scfv_dict)
+        # Only set scfv_dict and scfv_ids if they are not already set, allows for updating later
+        if self.scfv_dict is None:
+            self.scfv_dict = scfv_dict
+            self.scfv_ids = scfv_ids
+        else: # If already set, update with new sequences
+            self.scfv_dict.update(scfv_dict)
+            self.scfv_ids = list(self.scfv_dict.keys())
 
         return self.scfv_dict, self.scfv_ids
+    
 
-    def annotate_seqs(self, linker, orientation_dict: dict):
+    def annotate_seqs(self, linker, orientation_dict: dict, generate_motif_commands: bool = True):
         """ Function to annotate scfv sequences into heavy and light chains using antpack's PairedChainAnnotator
         Returns:
             dict: nested dictionary of scfv sequences with annotated heavy and light chains
@@ -45,7 +54,8 @@ class Scfv:
             }
             
             print(f"Generated Annotations for {scfv_id}, about to begin motif scaffolding command generation...")
-            annotated_scfv_seqs[scfv_id]['motif_scaffolding_command'] = self.generate_motif_scaffolding_contig(scfv_id, scfv_annotated_dict = annotated_scfv_seqs)
+            if generate_motif_commands:
+                annotated_scfv_seqs[scfv_id]['motif_scaffolding_command'] = self.generate_motif_scaffolding_contig(scfv_id, scfv_annotated_dict = annotated_scfv_seqs)
             print(f"Annotation done for {scfv_id}")
         
         self.annotated_scfv_seqs = annotated_scfv_seqs
@@ -136,6 +146,10 @@ class Scfv:
         elif orientation == 'VL-VH':
             first_chain = 'light'
             second_chain = 'heavy'
+        
+        elif orientation == 'unknown':
+            print(f"Orientation for {scfv_id} is unknown, cannot generate motif scaffolding command")
+            return "Unable to Generate Motif Scaffolding Command due to unknown orientation"
         
         anti_dict[first_chain] = scfv_annotated_dict[scfv_id][first_chain]['region_loc_dict']
         anti_dict[second_chain] = scfv_annotated_dict[scfv_id][second_chain]['region_loc_dict']
