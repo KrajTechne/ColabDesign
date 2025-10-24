@@ -9,7 +9,7 @@ import sys
 class Scfv:
     def __init__(self, scheme: str = "martin"):
         self.scheme = scheme
-        self.scfv_dict = None
+        self.scfv_dict = {}
         self.pc_annotator = PairedChainAnnotator(scheme = scheme)
     
     def extract_seqs(self, fasta_path,  suffix_split: str = "_-_", seq_type: str = "", anti = False):
@@ -24,7 +24,7 @@ class Scfv:
         scfv_ids = list(scfv_dict.keys())
         print(scfv_dict)
         # Only set scfv_dict and scfv_ids if they are not already set, allows for updating later
-        if self.scfv_dict is None:
+        if self.scfv_dict is None or len(self.scfv_dict) == 0:
             self.scfv_dict = scfv_dict
             self.scfv_ids = scfv_ids
         else: # If already set, update with new sequences
@@ -33,6 +33,16 @@ class Scfv:
 
         return self.scfv_dict, self.scfv_ids
     
+    def update_seqs(self, new_scfv_dict: dict):
+        """ Function to update scfv sequences with new sequences stored in a dictionary
+        Args:
+            new_scfv_dict (dict): Dictionary with keys being scFv or paired seq IDs and values being sequences (heavy + linker + light or vice versa or regular paired sequences)
+        Returns:
+            dict: updated dictionary of scfv and/or paired sequences with sequences
+        """ 
+        self.scfv_dict.update(new_scfv_dict)
+        self.scfv_ids = list(self.scfv_dict.keys())
+        return self.scfv_dict
 
     def annotate_seqs(self, linker, orientation_dict: dict, generate_motif_commands: bool = True):
         """ Function to annotate scfv sequences into heavy and light chains using antpack's PairedChainAnnotator
@@ -50,6 +60,7 @@ class Scfv:
                 'heavy' : complete_heavy_dict,
                 'light' : complete_light_dict,
                 'linker' : linker,
+                'seq' : scfv_seq,
                 'orientation' : orientation_dict.get(scfv_id, "unknown")
             }
             
