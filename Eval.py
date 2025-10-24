@@ -1,11 +1,14 @@
 import numpy as np
 import pandas as pd
+import Levenshtein
+import blosum as bl
 from ColabDesign.Scfv import Scfv
 
 class Eval:
     """ Class to evaluate designed ScFv sequences against target sequences
     """
-    def __init__(self, mpnn_csv_path: str, ref_anti_fasta_path: str, ref_scfv_fasta_path: str, orientation_dict: dict, scheme = 'martin', linker = 'GGGGSGGGGSGGGGS', ):
+    def __init__(self, mpnn_csv_path: str, ref_anti_fasta_path: str, ref_scfv_fasta_path: str, orientation_dict: dict, scheme = 'martin', linker = 'GGGGSGGGGSGGGGS',
+                 ref_name: str = ''):
         """ Initialization function for Eval class
         Args:
             mpnn_csv_path (str): Path to CSV file containing designed scFv sequences from MPNN
@@ -17,8 +20,9 @@ class Eval:
         self.ref_anti_fasta_path = ref_anti_fasta_path
         self.ref_scfv_fasta_path = ref_scfv_fasta_path
         self.ref_paired_seq_annotator = Scfv(scheme=scheme)
-        self.design_scfv_seq_annotator = Scfv(scheme=scheme)
+        self.ref_scfv_seq_annotator = Scfv(scheme=scheme)
         self.linker = linker
+        self.ref_name = ref_name
         self.orientation_dict = orientation_dict
     
     def load_refs(self):
@@ -27,26 +31,27 @@ class Eval:
             dict: Dictionary with keys being scFv IDs and values being sequences
         """ 
         # Load reference scFv sequences        
-        ref_paired_seq_dict, ref_paired_seq_ids = self.ref_paired_seq_annotator.extract_seqs(self.ref_scfv_fasta_path, suffix_split = "_-_", seq_type = "", anti = False)
+        ref_scfv_seq_dict, ref_scfv_seq_ids = self.ref_scfv_seq_annotator.extract_seqs(self.ref_scfv_fasta_path, suffix_split = "_-_", seq_type = "", anti = False)
 
         # Load original antibody sequences
         ref_paired_seq_dict, ref_paired_seq_ids = self.ref_paired_seq_annotator.extract_seqs(self.ref_anti_fasta_path, suffix_split = "", seq_type = "", anti = True)
 
-        self.ref_seq_dict = ref_paired_seq_dict
-        self.ref_seq_ids = ref_paired_seq_ids
-
         # Annotate reference sequences
-        self.annotated_ref_seqs = self.ref_paired_seq_annotator.annotate_seqs(self.linker, self.orientation_dict, generate_motif_commands = False)
+        self.annotated_ref_paired_seqs = self.ref_paired_seq_annotator.annotate_seqs(self.linker, self.orientation_dict, generate_motif_commands = False)
+        self.annotated_ref_scfv_seqs = self.ref_scfv_seq_annotator.annotate_seqs(self.linker, self.orientation_dict, generate_motif_commands = False)
+        # Combine annotated paired and scFv sequences
+        annotated_ref_seqs = {**self.annotated_ref_paired_seqs, **self.annotated_ref_scfv_seqs}
+        self.annotated_ref_seqs = annotated_ref_seqs
         return self.annotated_ref_seqs
     
-    def load_designs(self, scfv_ref_name: str):
+    def load_designs(self):
         """ Function to load designed scFv sequences from MPNN CSV file
         Returns:
             dict: Dictionary with keys being scFv IDs and values being sequences
         """ 
         # Extract orientation, location of heavy FRs & CDRs, and location of light FRs & CDRs from reference name
         for ref_name, orientation in self.orientation_dict.items():
-            if scfv_ref_name in ref_name:
+            if self.ref_name in ref_name:
                 self.design_orientation = orientation
                 self.design_heavy_region_loc_dict = self.annotated_ref_seqs[ref_name]['heavy']['region_loc_dict']
                 self.design_light_region_loc_dict = self.annotated_ref_seqs[ref_name]['light']['region_loc_dict']
@@ -85,8 +90,8 @@ class Eval:
             # Annotate designed scFv sequences chain dependent properties: region locations, region sequences, chain seq
             annotated_design_seqs[scfv_id]['heavy']['region_loc_dict'] = self.design_heavy_region_loc_dict
             annotated_design_seqs[scfv_id]['light']['region_loc_dict'] = self.design_light_region_loc_dict
-            annotated_design_seqs[scfv_id]['heavy']['chain_seq'] = heavy_seq
-            annotated_design_seqs[scfv_id]['light']['chain_seq'] = light_seq
+            annotated_design_seqs[scfv_id]['heavy']['seq'] = heavy_seq
+            annotated_design_seqs[scfv_id]['light']['seq'] = light_seq
             annotated_design_seqs[scfv_id]['heavy']['region_seqs_dict'] = {index : heavy_seq[locs['start']:locs['end']+1] for index, locs in self.design_heavy_region_loc_dict.items()}
             annotated_design_seqs[scfv_id]['light']['region_seqs_dict'] = {index : light_seq[locs['start']:locs['end']+1] for index, locs in self.design_light_region_loc_dict.items()}
             
@@ -95,6 +100,138 @@ class Eval:
         
         self.annotated_design_seqs = annotated_design_seqs
         return self.annotated_design_seqs
+    #============================== EVALUATION METRICS ==============================#
+    def compute_levenshtein(self, seq1: str, seq2: str, similarity: bool = False):
+        """ Function to compute Levenshtein distance or similarity between two sequences
+        Args:
+            seq1 (str): First sequence
+            seq2 (str): Second sequence
+            similarity (bool): If True, compute similarity instead of distance (default: False)
+        Returns:
+            int or float: Levenshtein distance or similarity between the two sequences
+        """ 
+        if seq1 is not None and seq2 is not None:
+            distance = Levenshtein.distance(seq1, seq2)
+            if similarity:
+                max_len = max(len(seq1), len(seq2))
+                similarity = 1 - (distance / max_len)
+                return similarity
+            else:
+                return distance
+    
+    def compute_sequence_identity(self, seq1: str, seq2: str):
+        """ Function to compute sequence identity between two sequences
+        Args:
+            seq1 (str): First sequence
+            seq2 (str): Second sequence
+        Returns:
+            float: Sequence identity between the two sequences
+        """ 
+        if seq1 is not None and seq2 is not None:
+            matches = sum(a == b for a, b in zip(seq1, seq2))
+            identity = matches / max(len(seq1), len(seq2))
+            return identity
+    
+    def compute_blosum_score(self, seq1: str, seq2: str, matrix: int):
+        """ Function to compute BLOSUM score between two sequences
+        Args:
+            seq1 (str): First sequence
+            seq2 (str): Second sequence
+            matrix (int): BLOSUM matrix to use (e.g., 62, 80, 100)
+        Returns:
+            int: BLOSUM score between the two sequences
+        """ 
+        blosum_matrix = bl.BLOSUM(matrix)
+        print(f"Using BLOSUM{matrix} matrix for scoring. with seq1: {seq1} and seq2: {seq2}")
+        if seq1 is not None and seq2 is not None: # Ensure sequences are not None or empty
+            if len(seq1) != len(seq2):
+                raise ValueError("Sequences must be of equal length to compute BLOSUM score.")
+            # Iterate through each region's sequence and compute BLOSUM score for entire region as sum of position-wise scores
+            blosum_reg_score = 0
+            for index, amino_acid in enumerate(seq1):
+                seq1_aa = amino_acid
+                seq2_aa = seq2[index]
+                blosum_pos_score = blosum_matrix[seq1_aa][seq2_aa]
+                blosum_reg_score += blosum_pos_score
+            
+        return blosum_reg_score
+    
+    def compute_region_metrics(self, ref_seq_dict: dict, design_seq_dict: dict, metric: str = 'levenshtein'):
+        """ Function to compute evaluation metrics for each region between reference and designed sequences
+        Args:
+            ref_seq_dict (dict): Dictionary containing annotated reference sequences
+            design_seq_dict (dict): Dictionary containing annotated designed sequences
+            metric (str): Metric to compute ('levenshtein', 'identity', 'blosum')
+        Returns:
+            dict: Dictionary containing computed metrics for each region
+        """
+
+        chain_types = ['heavy', 'light']
+        region_metrics_dict = {}
+        for chain in chain_types:
+            print(f"Computing {metric} metrics for {chain} chain...")
+
+            # Initialize region metrics dictionary
+            region_metrics_dict[chain] = {}
+
+            # Extract chain region specific seqs
+            ref_region_seqs_dict = ref_seq_dict[chain]['region_seqs_dict']
+            design_region_seqs_dict = design_seq_dict[chain]['region_seqs_dict']
+
+            # Iterate through each region and compute metrics
+            for region_index in ref_region_seqs_dict.keys():
+                print(f"  Processing region: {region_index}")
+                ref_region_seq = ref_region_seqs_dict.get(region_index, None)
+                design_region_seq = design_region_seqs_dict.get(region_index, None)
+
+                if metric == 'levenshtein':
+                    region_metric = self.compute_levenshtein(ref_region_seq, design_region_seq)
+                elif metric == 'identity':
+                    region_metric = self.compute_sequence_identity(ref_region_seq, design_region_seq)
+                elif metric == 'blosum':
+                    region_metric = self.compute_blosum_score(ref_region_seq, design_region_seq, matrix=62)
+                else:
+                    raise ValueError(f"Unsupported metric: {metric}")
+
+                region_metrics_dict[chain][region_index] = region_metric
+        
+        return region_metrics_dict
+    
+    def compile_blosum_scores(self):
+        """ Function to compute Blosum62 scores for all designed seqs and ref design seqs vs the original paired Ab seqs
+        Returns:
+            dict: Dictionary containing Blosum62 scores for all designed seqs and ref design seqs vs the original paired Ab seqs
+        """
+        paired_blosum_scores = {}
+
+        # Prepare reference and design sequence dictionaries
+        for key in self.annotated_ref_seqs.keys():
+            if self.ref_name in key: # Indicates ref name is part of the key for either the ref scfv or ref paired seq
+                if 'manod' in key or 'scfv' in key:
+                    ref_design_key = key
+                else:
+                    ref_paired_key = key
+        #print(f"Reference paired key: {ref_paired_key}")
+        #print(f"Reference design key: {ref_design_key}")
+        # Get correct reference paired Ab sequence dictionary & merge annotated ref scFv & designed scfv seq dicts
+        ref_ab_seq_dict = self.annotated_ref_paired_seqs[ref_paired_key]
+        ref_design_seq_dict = {ref_design_key : self.annotated_ref_scfv_seqs[ref_design_key]}
+        #print(ref_design_seq_dict)
+        ref_design_seq_dict = self.annotated_design_seqs | ref_design_seq_dict
+
+        for scfv_id, design_seq_dict in ref_design_seq_dict.items():
+            #print(f"Computing Blosum62 scores for design: {scfv_id}...")
+            #print(f"Reference sequence ID: {ref_design_key}")
+            # Compute Blosum62 scores for heavy and light chains
+            blosum_scores_dict = self.compute_region_metrics(ref_ab_seq_dict, design_seq_dict, metric='blosum')
+            paired_blosum_scores[scfv_id] = blosum_scores_dict
+        
+        return paired_blosum_scores
+
+
+    
+
+            
     
 
 
