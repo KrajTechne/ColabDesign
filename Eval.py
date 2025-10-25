@@ -197,12 +197,14 @@ class Eval:
         
         return region_metrics_dict
     
-    def compile_blosum_scores(self):
-        """ Function to compute Blosum62 scores for all designed seqs and ref design seqs vs the original paired Ab seqs
+    def compute_metrics_ref_paired(self, metrics: list):
+        """ Function to compute metrics for all designed seqs and ref design seqs vs the original paired Ab seq
+        Args:
+            metrics: list -> List of metrics used to compare the scfv seqs to the original paired Ab seq
         Returns:
-            dict: Dictionary containing Blosum62 scores for all designed seqs and ref design seqs vs the original paired Ab seqs
+            dict: Dictionary containing Blosum62 scores for all designed seqs and ref design seqs vs the original paired Ab seq
         """
-        paired_blosum_scores = {}
+        metric_ref_paired_scores = {metric : {} for metric in metrics} # Adjusting definition since using metrics (list input)
 
         # Prepare reference and design sequence dictionaries
         for key in self.annotated_ref_seqs.keys():
@@ -211,22 +213,64 @@ class Eval:
                     ref_design_key = key
                 else:
                     ref_paired_key = key
-        #print(f"Reference paired key: {ref_paired_key}")
-        #print(f"Reference design key: {ref_design_key}")
+
         # Get correct reference paired Ab sequence dictionary & merge annotated ref scFv & designed scfv seq dicts
         ref_ab_seq_dict = self.annotated_ref_paired_seqs[ref_paired_key]
         ref_design_seq_dict = {ref_design_key : self.annotated_ref_scfv_seqs[ref_design_key]}
-        #print(ref_design_seq_dict)
         ref_design_seq_dict = self.annotated_design_seqs | ref_design_seq_dict
 
+
         for scfv_id, design_seq_dict in ref_design_seq_dict.items():
-            #print(f"Computing Blosum62 scores for design: {scfv_id}...")
-            #print(f"Reference sequence ID: {ref_design_key}")
-            # Compute Blosum62 scores for heavy and light chains
-            blosum_scores_dict = self.compute_region_metrics(ref_ab_seq_dict, design_seq_dict, metric='blosum')
-            paired_blosum_scores[scfv_id] = blosum_scores_dict
+
+            # Iterate through each metric in the metrics list
+            for metric in metrics:
+
+                region_metric = self.compute_region_metrics(ref_ab_seq_dict, design_seq_dict, metric= metric)
+                metric_ref_paired_scores[metric][scfv_id] = region_metric
         
-        return paired_blosum_scores
+        return metric_ref_paired_scores
+    
+    def compute_metrics_ref_paired_scfv(self, metrics: list = ['levenshtein', 'identity']):
+        """ Function to compute metrics for all designed seqs vs the ref paired ab seq and ref scfv seq
+        Args:
+            metrics: list of metrics referring to evaluation metrics previously defined
+        Returns:
+            dict: Nested dictionary of {metric: {scfv_design_id : metric_score}}
+        """
+
+        # Prepare reference and design sequence dictionaries
+        for key in self.annotated_ref_seqs.keys():
+            if self.ref_name in key: # Indicates ref name is part of the key for either the ref scfv or ref paired seq
+                if 'manod' in key or 'scfv' in key:
+                    ref_design_key = key
+                else:
+                    ref_paired_key = key
+        
+        # Create reference (paired and ref_scfv) and design (RFDiffusion + MPNN, and ref_scfv) sequence dictionaries
+        ref_seqs_dict = {ref_paired_key : self.annotated_ref_paired_seqs[ref_paired_key],
+                                  ref_design_key : self.annotated_ref_scfv_seqs[ref_design_key]}
+        
+        ref_design_seq_dict = {ref_design_key : self.annotated_ref_scfv_seqs[ref_design_key]}
+        ref_design_seq_dict = self.annotated_design_seqs | ref_design_seq_dict
+
+        # Create metric-specific score dictionaries with the key being respective ref (paired or ref_scfv) id
+        metric_ref_all_scores = {}
+        for ref_id, ref_seq_dict in ref_seqs_dict.items(): # Iterate through both baseline paired and scfv seqs
+            
+            metric_ref_scores = {metric : {} for metric in metrics} # Initialize empty dict with key being each metric
+            
+            for scfv_id, design_seq_dict in ref_design_seq_dict.items(): # Iterate through all the design seqs
+
+                for metric in metrics: # Iterate through all the metrics
+
+                    region_metric = self.compute_region_metrics(ref_seq_dict, design_seq_dict, metric = metric)
+                    metric_ref_scores[metric][scfv_id] = region_metric
+            
+            metric_ref_all_scores[ref_id] = metric_ref_scores # Assign metric-specific scores to the key being respective baseline
+        
+        return metric_ref_all_scores
+
+
 
 
     
