@@ -44,6 +44,7 @@ def main(argv):
   ag.add(["initial_guess" ],     False,   None, ["initialize previous coordinates"])
   ag.add(["use_multimer"  ],     False,   None, ["use alphafold_multimer_v3"])
   ag.add(["use_soluble"   ],     False,   None, ["use solubleMPNN"])
+  ag.add(["use_antibody"  ],     False,   None, ['use antibody MPNN from Dreyer Group'])
   ag.add(["num_recycles=" ],         3,    int, ["number of recycles"])
   ag.add(["rm_aa="],               "C",    str, ["disable specific amino acids from being sampled"])
   ag.add(["num_designs="  ],         1,    int, ["number of designs to evaluate"])
@@ -125,7 +126,16 @@ def main(argv):
   
   print("running proteinMPNN...")
   sampling_temp = o.mpnn_sampling_temp
-  mpnn_model = mk_mpnn_model(weights="soluble" if o.use_soluble else "original")
+  
+  if o.use_soluble:
+    weights = 'soluble'
+  elif o.use_antibody:
+    weights = 'antibody'
+  else:
+    weights = 'original'
+  print("Weights Used: ", weights)
+  mpnn_model = mk_mpnn_model(weights= weights)
+  
   outs = []
   pdbs = []
   for m in range(o.num_designs):

@@ -25,13 +25,16 @@ class mk_mpnn_model():
                backbone_noise=0.0, dropout=0.0,
                seed=None, verbose=False, weights="original"): # weights can be set to either original or soluble
     # load model
+    print(f"In mk_mpnn_model, weights is {weights}")
     if weights == "original":
       from .weights import __file__ as mpnn_path
     elif weights == "soluble":
       from .weights_soluble import __file__ as mpnn_path
+    elif weights == 'antibody':
+      from .weights_antibody import __file__ as mpnn_path
     else:
       raise ValueError(f'Invalid value {weights} supplied for weights. Value must be either "original" or "soluble".')
-
+    print(mpnn_path)
     path = os.path.join(os.path.dirname(mpnn_path), f'{model_name}.pkl')
     checkpoint = joblib.load(path)
     config = {'num_letters': 21,
