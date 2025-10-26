@@ -100,6 +100,73 @@ class Eval:
         
         self.annotated_design_seqs = annotated_design_seqs
         return self.annotated_design_seqs
+    #============================== Evaluation Helper Function ======================#
+    #============================== Structural Evaluation Approach ==================#
+    def generate_pdb_region_ranges(self, anti_name: str) -> dict:
+        """
+        Function to generate list of FR and CDR 1-indexed ranges for an annotated antibody and specific chain,
+        Use as input to align specific reference and design PDBs
+        Args:
+            anti_name: (str) name of antibody
+        Return:
+            anti_pdb_dict = {'heavy' : {'fmwk' : fr_range, 'cdr' : cdr_range,
+                             'light' : {'fmwk' : fr_range, 'cdr' : cdr_range,
+                             'linker' : linker_range}}}
+            fr_range: list of 1-indexed tuples defining start and end (both inclusive) of FR1-FR4
+            cdr_range: list of 1-indexed tuples defining start and end (both inclusive) of CDR1-CDR3
+            linker_range: list of 1-indexed tuple defining start and end (both inclusive) of linker
+        """
+        for ref_id in self.annotated_ref_seqs:
+            if anti_name in ref_id:
+                anti_dict = self.annotated_ref_seqs[anti_name]
+        
+        linker_length = len(anti_dict['linker'])
+        orientation = anti_dict['orientation']
+        
+        # Have to apply an offset depending on which chain is first
+        if orientation == 'VH-VL':
+            first_chain = 'heavy'
+            second_chain = 'light'
+        elif orientation == 'VL-VH':
+            first_chain = 'light'
+            second_chain = 'heavy'
+        elif orientation == 'unknown':
+            raise ValueError("Function only viable if the input antibody is an scFV")
+    
+        # Compute Linker PDB Positions if want to be used for alignment or measurement
+        first_chain_length = len(anti_dict[first_chain]['seq'])
+        linker_range = [(first_chain_length + 1, first_chain_length + linker_length)]
+
+        # Create respective heavy or light chain PDB FMWK & CDR residue lists
+        anti_pdb_dict = {}
+        for chain in ['heavy', 'light']:
+            fr_range = []
+            cdr_range = []
+            anti_reg_loc_dict = anti_dict[chain]['region_loc_dict'] # Extract 0-indexed dictionary of FR & CDR start and end indices
+            
+            # Adjustment to account for linker
+            if chain == first_chain:
+                adj = 0
+            elif chain == second_chain:
+                adj = len(anti_dict[first_chain]['seq']) + linker_length # adj is based on first chain length & linker
+            
+            for reg_id, index_dict in anti_reg_loc_dict.items():
+                index_start_one_indexed = index_dict['start'] + 1 + adj
+                index_end_one_indexed = index_dict['end'] + 1 + adj
+                index_tuple = (index_start_one_indexed, index_end_one_indexed)
+        
+                if "fmwk" in reg_id:
+                    fr_range.append(index_tuple)
+        
+                elif "cdr" in reg_id:
+                    cdr_range.append(index_tuple)
+            
+            anti_pdb_dict[chain] = {'fmwk' : fr_range, 'cdr' : cdr_range}
+        
+        # Add in Linker Location in PDB
+        anti_pdb_dict['linker'] = linker_range
+
+        return anti_pdb_dict
     #============================== EVALUATION METRICS ==============================#
     def compute_levenshtein(self, seq1: str, seq2: str, similarity: bool = False):
         """ Function to compute Levenshtein distance or similarity between two sequences
