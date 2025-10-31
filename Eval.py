@@ -37,8 +37,8 @@ class Eval:
         ref_paired_seq_dict, ref_paired_seq_ids = self.ref_paired_seq_annotator.extract_seqs(self.ref_anti_fasta_path, suffix_split = "", seq_type = "", anti = True)
 
         # Annotate reference sequences
-        self.annotated_ref_paired_seqs = self.ref_paired_seq_annotator.annotate_seqs(self.linker, self.orientation_dict, generate_motif_commands = False)
-        self.annotated_ref_scfv_seqs = self.ref_scfv_seq_annotator.annotate_seqs(self.linker, self.orientation_dict, generate_motif_commands = False)
+        self.annotated_ref_paired_seqs = self.ref_paired_seq_annotator.annotate_seqs(self.linker, self.orientation_dict, target_dict= {}, generate_motif_commands = False)
+        self.annotated_ref_scfv_seqs = self.ref_scfv_seq_annotator.annotate_seqs(self.linker, self.orientation_dict, target_dict= {}, generate_motif_commands = False)
         # Combine annotated paired and scFv sequences
         annotated_ref_seqs = {**self.annotated_ref_paired_seqs, **self.annotated_ref_scfv_seqs}
         self.annotated_ref_seqs = annotated_ref_seqs
@@ -68,7 +68,9 @@ class Eval:
         df_designs['scfv_seq'] = df_designs['seq'].str.split('/').str[0]
         df_seqs = df_designs['scfv_seq'].str.split(self.linker, expand=True).rename(columns=col_names)
         df_designs = pd.concat([df_designs, df_seqs], axis=1)
-        df_designs_dict = df_designs[['design', 'n','scfv_seq', 'heavy_seq', 'light_seq']].to_dict(orient='records')
+        # Sort by RFDiffusion Design First and then PTM from best to worst
+        df_designs.sort_values(by = ['design', 'ptm'], ascending = [True, False], inplace = True)  
+        df_designs_dict = df_designs[['design', 'n', 'ptm', 'scfv_seq', 'heavy_seq', 'light_seq']].to_dict(orient='records')
 
         
         
@@ -76,7 +78,8 @@ class Eval:
         annotated_design_seqs = {}
         for record in df_designs_dict:
             # Extract scFv ID, heavy and light sequences from record
-            scfv_id = f"RF_design{record['design']}_num{record['n']}"
+            ptm_str = f"{record['ptm']}"[:5].split('.')[1]
+            scfv_id = f"RF_design{record['design']}_num{record['n']}_ptm_{ptm_str}"
             heavy_seq = record['heavy_seq']
             light_seq = record['light_seq']
 
@@ -127,15 +130,18 @@ class Eval:
         if orientation == 'VH-VL':
             first_chain = 'heavy'
             second_chain = 'light'
+            is_scfv = True
         elif orientation == 'VL-VH':
             first_chain = 'light'
             second_chain = 'heavy'
+            is_scfv = True
         elif orientation == 'unknown':
-            raise ValueError("Function only viable if the input antibody is an scFV")
+            is_scfv = False
     
-        # Compute Linker PDB Positions if want to be used for alignment or measurement
-        first_chain_length = len(anti_dict[first_chain]['seq'])
-        linker_range = [(first_chain_length + 1, first_chain_length + linker_length)]
+        # Compute Linker PDB Positions if want to be used for alignment or measurement. Only for scFvs
+        if is_scfv:
+            first_chain_length = len(anti_dict[first_chain]['seq'])
+            linker_range = [(first_chain_length + 1, first_chain_length + linker_length)]
 
         # Create respective heavy or light chain PDB FMWK & CDR residue lists
         anti_pdb_dict = {}
@@ -145,11 +151,13 @@ class Eval:
             anti_reg_loc_dict = anti_dict[chain]['region_loc_dict'] # Extract 0-indexed dictionary of FR & CDR start and end indices
             
             # Adjustment to account for linker
-            if chain == first_chain:
+            if is_scfv:
+                if chain == first_chain:
+                    adj = 0
+                elif chain == second_chain:
+                    adj = len(anti_dict[first_chain]['seq']) + linker_length # adj is based on first chain length & linker
+            else:
                 adj = 0
-            elif chain == second_chain:
-                adj = len(anti_dict[first_chain]['seq']) + linker_length # adj is based on first chain length & linker
-            
             for reg_id, index_dict in anti_reg_loc_dict.items():
                 index_start_one_indexed = index_dict['start'] + 1 + adj
                 index_end_one_indexed = index_dict['end'] + 1 + adj
@@ -164,11 +172,12 @@ class Eval:
             anti_pdb_dict[chain] = {'fmwk' : fr_range, 'cdr' : cdr_range}
         
         # Add in Linker Location in PDB
-        anti_pdb_dict['linker'] = linker_range
+        if is_scfv:
+            anti_pdb_dict['linker'] = linker_range
 
         return anti_pdb_dict
     #============================== EVALUATION METRICS ==============================#
-    def compute_levenshtein(self, seq1: str, seq2: str, similarity: bool = False):
+    def compute_levenshtein(self, seq1: str, seq2: str, similarity: bool = True):
         """ Function to compute Levenshtein distance or similarity between two sequences
         Args:
             seq1 (str): First sequence
@@ -181,7 +190,7 @@ class Eval:
             distance = Levenshtein.distance(seq1, seq2)
             if similarity:
                 max_len = max(len(seq1), len(seq2))
-                similarity = 1 - (distance / max_len)
+                similarity = (1 - (distance / max_len)) * 100 # Return similarity as a Percent (Better for Visualizations)
                 return similarity
             else:
                 return distance
@@ -264,7 +273,7 @@ class Eval:
         
         return region_metrics_dict
     
-    def compute_metrics_ref_paired(self, metrics: list):
+    def compute_metrics_ref_paired(self, metrics: list, ref_name : str):
         """ Function to compute metrics for all designed seqs and ref design seqs vs the original paired Ab seq
         Args:
             metrics: list -> List of metrics used to compare the scfv seqs to the original paired Ab seq
@@ -275,7 +284,7 @@ class Eval:
 
         # Prepare reference and design sequence dictionaries
         for key in self.annotated_ref_seqs.keys():
-            if self.ref_name in key: # Indicates ref name is part of the key for either the ref scfv or ref paired seq
+            if ref_name in key: # Indicates ref name is part of the key for either the ref scfv or ref paired seq
                 if 'manod' in key or 'scfv' in key:
                     ref_design_key = key
                 else:
@@ -297,8 +306,9 @@ class Eval:
         
         return metric_ref_paired_scores
     
-    def compute_metrics_ref_paired_scfv(self, metrics: list = ['levenshtein', 'identity']):
+    def compute_metrics_ref_paired_scfv(self, metrics: list = ['levenshtein', 'identity'], ref_name : str = ""):
         """ Function to compute metrics for all designed seqs vs the ref paired ab seq and ref scfv seq
+            May need to adjust this so its just against the ref scfv seq. Do not see value in comparing scfvs to paired Ab
         Args:
             metrics: list of metrics referring to evaluation metrics previously defined
         Returns:
@@ -307,7 +317,7 @@ class Eval:
 
         # Prepare reference and design sequence dictionaries
         for key in self.annotated_ref_seqs.keys():
-            if self.ref_name in key: # Indicates ref name is part of the key for either the ref scfv or ref paired seq
+            if ref_name in key: # Indicates ref name is part of the key for either the ref scfv or ref paired seq
                 if 'manod' in key or 'scfv' in key:
                     ref_design_key = key
                 else:
