@@ -9,11 +9,13 @@ import py3Dmol
 warnings.simplefilter('ignore', PDBConstructionWarning)
 
 class AlignPDB:
-    def __init__(self, ref_pdb_path : str, design_pdb_path : str, aligned_residues : list, measured_residues : list):
+    def __init__(self, ref_pdb_path : str, design_pdb_path : str, ref_aligned_residues, ref_measured_residues, design_aligned_residues, design_measured_residues):
         self.ref_pdb_path = ref_pdb_path
         self.design_pdb_path = design_pdb_path
-        self.aligned_residues = aligned_residues # List of tuples (start pos, end pos) 1-indexed and inclusive
-        self.measured_residues = measured_residues # List of tuples (start pos, end pos) 1-indexed and inclusive
+        self.ref_aligned_residues = ref_aligned_residues # List of tuples (start pos, end pos) 1-indexed and inclusive. Could be dict {'chain_id' : list of tuples}
+        self.ref_measured_residues = ref_measured_residues # List of tuples (start pos, end pos) 1-indexed and inclusive. Could be dict {'chain_id' : list of tuples}
+        self.design_aligned_residues = design_aligned_residues # List of tuples (start pos, end pos) 1-indexed and inclusive. Could be dict {'chain_id' : list of tuples}
+        self.design_measured_residues = design_measured_residues # List of tuples (start pos, end pos) 1-indexed and inclusive. Could be dict {'chain_id' : list of tuples}
     
     def get_backbone_atoms(self, chain, ranges):
         """Collects C-alpha atoms for specified input ranges of 1-indexed residues positions.
@@ -104,6 +106,27 @@ class AlignPDB:
         # 5. Finalize View
         view.zoomTo()
         view.show()
+    def retrieve_atoms(self, pdb_model, residues):
+        """ Extracting appropriate atoms based on whether its a scfv or paired antibody
+        """
+        # If model is an scFv:
+        atoms = []
+        if type(residues) == list:
+            chain_scfv = pdb_model.get_chains().__next__()
+            atoms = self.get_backbone_atoms(chain= chain_scfv, ranges= residues)
+        
+        # If model is a paired antibody
+        elif type(residues) == dict:
+            for chain, residues_list in residues.items():
+                if chain == 'heavy':
+                    pdb_chain_id = 'A'
+                elif chain == 'light':
+                    pdb_chain_id = 'B'
+                chain = pdb_model[pdb_chain_id]
+                atoms_portion = self.get_backbone_atoms(chain = chain, ranges = residues_list)
+                atoms += atoms_portion
+        
+        return atoms
 
     def align_pdb(self):
         """ Overarching function calling other functions to 
@@ -122,15 +145,12 @@ class AlignPDB:
         # Model 0, Chain A (usually the default single chain in AlphaFold PDBs)
         model_a = structure_a[0]
         model_b = structure_b[0]
-        chain_a = model_a.get_chains().__next__()
-        chain_b = model_b.get_chains().__next__()
 
-        # Extract alpha-carbon atoms for both aligned and measured residues
-        align_atoms_a = self.get_backbone_atoms(chain_a, self.aligned_residues)
-        align_atoms_b = self.get_backbone_atoms(chain_b, self.aligned_residues)
+        align_atoms_a = self.retrieve_atoms(model_a, self.ref_aligned_residues)
+        align_atoms_b = self.retrieve_atoms(model_b, self.design_aligned_residues)
 
-        measure_atoms_a = self.get_backbone_atoms(chain_a, self.measured_residues)
-        measure_atoms_b = self.get_backbone_atoms(chain_b, self.measured_residues)
+        measure_atoms_a = self.retrieve_atoms(model_a, self.ref_measured_residues)
+        measure_atoms_b = self.retrieve_atoms(model_b, self.design_measured_residues)
 
         # Safety check
         if len(align_atoms_a) != len(align_atoms_b) or len(measure_atoms_a) != len(measure_atoms_b):
@@ -177,8 +197,8 @@ class AlignPDB:
         else:
             print("Interpretation: Low structural similarity in the measured.")
             print("The Aligned Residues likely caused a major distortion of the measured residues, which could abolish function.")
-
-        pymol_residue_indices = ', '.join(f"{start}-{end}" for start, end in self.measured_residues)
+        
+        pymol_residue_indices = ', '.join(f"{start}-{end}" for start, end in self.design_measured_residues)
         
         self.visualize_aligned_proteins(file_a= self.ref_pdb_path,
                                         file_b_aligned= aligned_pdb_save_path,
