@@ -44,7 +44,7 @@ class Scfv:
         self.scfv_ids = list(self.scfv_dict.keys())
         return self.scfv_dict
 
-    def annotate_seqs(self, linker, orientation_dict: dict, generate_motif_commands: bool = True):
+    def annotate_seqs(self, linker, orientation_dict: dict, target_dict: dict, generate_motif_commands: bool = True):
         """ Function to annotate scfv sequences into heavy and light chains using antpack's PairedChainAnnotator
         Returns:
             dict: nested dictionary of scfv sequences with annotated heavy and light chains
@@ -64,9 +64,11 @@ class Scfv:
                 'orientation' : orientation_dict.get(scfv_id, "unknown")
             }
             
+            target_command_subset = target_dict.get(scfv_id, 'None Provided')
             print(f"Generated Annotations for {scfv_id}, about to begin motif scaffolding command generation...")
             if generate_motif_commands:
-                annotated_scfv_seqs[scfv_id]['motif_scaffolding_command'] = self.generate_motif_scaffolding_contig(scfv_id, scfv_annotated_dict = annotated_scfv_seqs)
+                annotated_scfv_seqs[scfv_id]['motif_scaffolding_command'] = self.generate_motif_scaffolding_contig(scfv_id, scfv_annotated_dict = annotated_scfv_seqs,
+                                                                                                                   target_command_subset= target_command_subset)
             print(f"Annotation done for {scfv_id}")
         
         self.annotated_scfv_seqs = annotated_scfv_seqs
@@ -130,7 +132,7 @@ class Scfv:
 
         return region_dict
     
-    def generate_motif_scaffolding_contig(self, scfv_id: str, scfv_annotated_dict: dict) -> str:
+    def generate_motif_scaffolding_contig(self, scfv_id: str, scfv_annotated_dict: dict, target_command_subset: str) -> str:
         """ Generating motif scaffolding command for RFDiffusion, command varies based on orientation & target chain length
             Args:
                 scfv_id (str): scfv identifier
@@ -202,6 +204,6 @@ class Scfv:
 
         # Have to add chain break as want to do motif scaffolding in presence of specific chain in target responsible for binding
         #### for CD28: its B1-118, need to modify based on target and should be a key value pair in scfv_annotated_dict-------------- not yet implemented
-        motif_scaffolding_contig_command += "0 B1-118"
+        motif_scaffolding_contig_command += f"0 {target_command_subset}"
         motif_scaffolding_contig_command
         return motif_scaffolding_contig_command
