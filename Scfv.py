@@ -64,7 +64,7 @@ class Scfv:
                 'orientation' : orientation_dict.get(scfv_id, "unknown")
             }
             
-            target_command_subset = target_dict.get(scfv_id, 'None Provided')
+            target_command_subset = target_dict.get(scfv_id, '')
             print(f"Generated Annotations for {scfv_id}, about to begin motif scaffolding command generation...")
             if generate_motif_commands:
                 annotated_scfv_seqs[scfv_id]['motif_scaffolding_command'] = self.generate_motif_scaffolding_contig(scfv_id, scfv_annotated_dict = annotated_scfv_seqs,
@@ -204,6 +204,8 @@ class Scfv:
 
         # Have to add chain break as want to do motif scaffolding in presence of specific chain in target responsible for binding
         #### for CD28: its B1-118, need to modify based on target and should be a key value pair in scfv_annotated_dict-------------- not yet implemented
-        motif_scaffolding_contig_command += f"0 {target_command_subset}"
-        motif_scaffolding_contig_command
-        return motif_scaffolding_contig_command
+        if target_command_subset == '': # Will happen if only want to scaffold without target chain
+            return motif_scaffolding_contig_command[:-1]  # Remove trailing slash
+        else:
+            motif_scaffolding_contig_command += f"0 {target_command_subset}"
+            return motif_scaffolding_contig_command
