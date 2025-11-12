@@ -45,6 +45,7 @@ def main(argv):
   ag.add(["use_multimer"  ],     False,   None, ["use alphafold_multimer_v3"])
   ag.add(["use_soluble"   ],     False,   None, ["use solubleMPNN"])
   ag.add(["use_antibody"  ],     False,   None, ['use antibody MPNN from Dreyer Group'])
+  ag.add(["use_hyper"     ],     False,   None, ["use hyperMPNN from Meiler Lab"])
   ag.add(["num_recycles=" ],         3,    int, ["number of recycles"])
   ag.add(["rm_aa="],               "C",    str, ["disable specific amino acids from being sampled"])
   ag.add(["num_designs="  ],         1,    int, ["number of designs to evaluate"])
@@ -131,6 +132,8 @@ def main(argv):
     weights = 'soluble'
   elif o.use_antibody:
     weights = 'antibody'
+  elif o.use_hyper:
+    weights = 'hyper'
   else:
     weights = 'original'
   print("Weights Used: ", weights)

@@ -32,6 +32,8 @@ class mk_mpnn_model():
       from .weights_soluble import __file__ as mpnn_path
     elif weights == 'antibody':
       from .weights_antibody import __file__ as mpnn_path
+    elif weights == 'hyper':
+      from .weights_hyper import __file__ as mpnn_path
     else:
       raise ValueError(f'Invalid value {weights} supplied for weights. Value must be either "original" or "soluble".')
     print(mpnn_path)
