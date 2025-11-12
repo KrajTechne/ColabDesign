@@ -7,7 +7,7 @@ from ColabDesign.Scfv import Scfv
 class Eval:
     """ Class to evaluate designed ScFv sequences against target sequences
     """
-    def __init__(self, mpnn_csv_path: str, ref_anti_fasta_path: str, ref_scfv_fasta_path: str, orientation_dict: dict,target_dict: dict, scheme = 'martin', linker = 'GGGGSGGGGSGGGGS',
+    def __init__(self, mpnn_csv_path: str, ref_anti_fasta_path: str, ref_scfv_fasta_path: str, linker_dict: dict, orientation_dict: dict, scheme = 'martin',
                  ref_name: str = ''):
         """ Initialization function for Eval class
         Args:
@@ -21,12 +21,11 @@ class Eval:
         self.ref_scfv_fasta_path = ref_scfv_fasta_path
         self.ref_paired_seq_annotator = Scfv(scheme=scheme)
         self.ref_scfv_seq_annotator = Scfv(scheme=scheme)
-        self.linker = linker
+        self.linker_dict = linker_dict
         self.ref_name = ref_name
-        self.target_dict = target_dict
         self.orientation_dict = orientation_dict
     
-    def load_refs(self):
+    def load_refs(self, target_dict: dict):
         """ Function to load reference scFv sequences from FASTA file
         Returns:
             dict: Dictionary with keys being scFv IDs and values being sequences
@@ -38,8 +37,8 @@ class Eval:
         ref_paired_seq_dict, ref_paired_seq_ids = self.ref_paired_seq_annotator.extract_seqs(self.ref_anti_fasta_path, suffix_split = "", seq_type = "", anti = True)
 
         # Annotate reference sequences
-        self.annotated_ref_paired_seqs = self.ref_paired_seq_annotator.annotate_seqs(self.linker, self.orientation_dict, target_dict= {}, generate_motif_commands = False)
-        self.annotated_ref_scfv_seqs = self.ref_scfv_seq_annotator.annotate_seqs(self.linker, self.orientation_dict, target_dict= self.target_dict, generate_motif_commands = True)
+        self.annotated_ref_paired_seqs = self.ref_paired_seq_annotator.annotate_seqs(self.linker_dict, self.orientation_dict, target_dict= {}, generate_motif_commands = False)
+        self.annotated_ref_scfv_seqs = self.ref_scfv_seq_annotator.annotate_seqs(self.linker_dict, self.orientation_dict, target_dict= target_dict, generate_motif_commands = True)
         # Combine annotated paired and scFv sequences
         annotated_ref_seqs = {**self.annotated_ref_paired_seqs, **self.annotated_ref_scfv_seqs}
         self.annotated_ref_seqs = annotated_ref_seqs

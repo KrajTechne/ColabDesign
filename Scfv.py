@@ -44,7 +44,7 @@ class Scfv:
         self.scfv_ids = list(self.scfv_dict.keys())
         return self.scfv_dict
 
-    def annotate_seqs(self, linker, orientation_dict: dict, target_dict: dict, generate_motif_commands: bool = True):
+    def annotate_seqs(self, linker_dict, orientation_dict: dict, target_dict: dict, generate_motif_commands: bool = True):
         """ Function to annotate scfv sequences into heavy and light chains using antpack's PairedChainAnnotator
         Returns:
             dict: nested dictionary of scfv sequences with annotated heavy and light chains
@@ -59,7 +59,7 @@ class Scfv:
             annotated_scfv_seqs[scfv_id] = {
                 'heavy' : complete_heavy_dict,
                 'light' : complete_light_dict,
-                'linker' : linker,
+                'linker' : linker_dict.get(scfv_id, ''),
                 'seq' : scfv_seq,
                 'orientation' : orientation_dict.get(scfv_id, "unknown")
             }
@@ -144,6 +144,11 @@ class Scfv:
         # Extract information from annotated scfv dictionary
         print(scfv_id)
         linker = scfv_annotated_dict[scfv_id]['linker']
+        if linker == '':
+            print(f"No linker found for {scfv_id}, cannot generate motif scaffolding command")
+            print("Input is probably not an scFv sequence. Verify input sequence and passed linker dictionary.")
+            print("Skipping motif scaffolding command generation for this sequence...")
+            return "Unable to Generate Motif Scaffolding Command due to missing linker"
         orientation = scfv_annotated_dict[scfv_id]['orientation']
         seq_len_dict = {
             'heavy' : len(scfv_annotated_dict[scfv_id]['heavy']['seq']),
