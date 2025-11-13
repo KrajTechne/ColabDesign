@@ -9,6 +9,7 @@ import pandas as pd
 import numpy as np
 from string import ascii_uppercase, ascii_lowercase
 alphabet_list = list(ascii_uppercase+ascii_lowercase)
+from scipy.special import softmax
 
 def get_info(contig):
   F = []
@@ -141,6 +142,8 @@ def main(argv):
   
   outs = []
   pdbs = []
+  
+  #--- MPNN DESIGN LOOP (with probs saving) ---
   for m in range(o.num_designs):
     if o.num_designs == 0:
       pdb_filename = o.pdb
@@ -153,7 +156,36 @@ def main(argv):
       af_model.opt["fix_pos"] = p[p < af_model._len]
 
     mpnn_model.get_af_inputs(af_model)
-    outs.append(mpnn_model.sample(num=o.num_seqs//batch_size, batch=batch_size, temperature=sampling_temp))
+    #outs.append(mpnn_model.sample(num=o.num_seqs//batch_size, batch=batch_size, temperature=sampling_temp))
+
+    # --- START of MPNN PROBS MODIFICATION ---
+    # 1. Run sampling and capture the full output
+    mpnn_output = mpnn_model.sample(
+        num=o.num_seqs//batch_size, 
+        batch=batch_size, 
+        temperature=sampling_temp
+    )
+    
+    # 2. Extract logits (raw scores) and take only the first 20 AAs
+    # The shape is (num_seqs, L, 21), we slice to (num_seqs, L, 20).
+    logits_20_aa = mpnn_output["logits"][..., :20]
+
+    #2.5 Save the raw logits as well
+    logits_filename = f"{o.loc}/design{m}_mpnn_logits.npy"
+    np.save(logits_filename, logits_20_aa)
+    print(f"MPNN logits saved to {logits_filename} (Shape: {logits_20_aa.shape})")
+    
+    # 3. Convert logits to probabilities using softmax (over the last axis: AAs)
+    # The result is the Position-Specific Probability Matrix (PSPM)
+    probs = softmax(logits_20_aa, axis=-1)
+    
+    # 4. Save the probability matrix for the current design 'm'
+    probs_filename = f"{o.loc}/design{m}_mpnn_probs.npy"
+    np.save(probs_filename, probs)
+    print(f"MPNN probabilities saved to {probs_filename} (Shape: {probs.shape})")
+    
+    # 5. Append the mpnn_output (which contains sequences, scores, etc.) to the outs list
+    outs.append(mpnn_output)
 
   if protocol == "binder":
     af_terms = ["plddt","i_ptm","i_pae","rmsd"]
